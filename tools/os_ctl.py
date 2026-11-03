@@ -29,8 +29,8 @@ KEYS = {"autostart": 1, "bright": 2, "ramp": 3, "touch_flags": 4, "button": 5, "
 HAPTICS = ["tick", "soft", "tap", "click", "double", "success", "long", "bump", "alarm", "boot"]
 STATES = ["off", "waiting for boot delay", "powering up", "RUNNING", "sleeping", "updating"]
 SCREENS = ["clock", "eyes", "paint", "info", "settings"]
-SCREENS16 = ["boot animation", "watch face", "app list", "stopwatch", "timer", "sketch", "flashlight", "breathe", "settings", "about"]
-FACES = ["big numbers", "analog", "modular"]
+SCREENS16 = ["boot", "carry", "dial", "a mode", "low battery"]
+FACES = ["carry: me", "carry: stack", "carry: hairline", "carry: day"]
 EV = {"tap": 1, "left": 2, "right": 3, "up": 4, "down": 5, "long": 6, "press": 7, "longpress": 8, "crownup": 9, "crowndown": 10}
 PINS = {f"P{p}_{i}": p * 8 + i for p in range(4) for i in range(8)}
 
@@ -62,7 +62,7 @@ def show(r):
 def show16(r, st):
     scr = SCREENS16[r[8]] if r[8] < len(SCREENS16) else r[8]
     clock = "synced" if r[76] & 1 else "restored after power cut (may be behind)" if r[76] & 2 else "not set"
-    log(f"state: {st} | showing: {scr} | face: {FACES[r[72] % 3]} | brightness {r[9]} | boot failures {r[2]} | "
+    log(f"state: {st} | showing: {scr} | scene: {FACES[r[72] % 4]} | brightness {r[9]} | boot failures {r[2]} | "
         f"start on power {'on' if r[3] else 'off'} | clock {clock}")
     log(f"speed: last frame {u32(r, 52) / 1000:.1f} ms ({u32(r, 56) / 1000:.1f} ms of it waiting for the send), "
         f"{u32(r, 60)} px | {u32(r, 64) / 10:.1f} fps | slowest frame since last status {u32(r, 68) / 1000:.1f} ms | "
