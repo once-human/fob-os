@@ -8,6 +8,7 @@
 #include <math.h>
 #include <time.h>
 #include "onkar_gfx.inc"
+#include "fob_ancs.h"
 
 static uint16_t fb[LCD_H][LCD_W];
 static uint32_t t_ms, sent_pix, frames, sent_frames;
@@ -44,6 +45,23 @@ static bool plat_info(int i, char *k, char *v)
     if (i >= 5) { return false; }
     strcpy(k, K[i]); strcpy(v, V[i]);
     return true;
+}
+
+/* a stand-in for the iPhone: the real list comes from the watch's notification client */
+static uint8_t sim_fa = FA_NONE; static uint32_t sim_gen = 1; static uint8_t sim_n; static fob_note_t sim_notes[FOB_NOTES]; static bool sim_call;
+void fob_ancs_init(void) {} void fob_ancs_start(uint8_t c) { (void)c; } void fob_ancs_link_down(uint8_t c) { (void)c; } bool fob_ancs_is_phone(uint8_t c) { (void)c; return true; }
+uint8_t fob_ancs_state(void) { return sim_fa; } uint8_t fob_ancs_count(void) { return sim_n; }
+bool fob_ancs_get(uint8_t i, fob_note_t *o) { if (i >= sim_n) { return false; } *o = sim_notes[i]; return true; }
+uint32_t fob_ancs_gen(void) { return sim_gen; } uint8_t fob_ancs_unread(void) { uint8_t u = 0; for (int i = 0; i < sim_n; i++) { u += sim_notes[i].unread; } return u; }
+void fob_ancs_mark_read(void) { for (int i = 0; i < sim_n; i++) { sim_notes[i].unread = 0; } sim_gen++; }
+bool fob_ancs_call_active(fob_note_t *o) { if (!sim_call) { return false; } *o = sim_notes[0]; return true; }
+bool fob_ancs_action(uint32_t uid, bool p) { (void)uid; (void)p; sim_call = false; sim_gen++; return true; }
+void fob_ancs_forget(void) { sim_fa = FA_NONE; sim_n = 0; sim_gen++; }
+static void sim_note(const char *app, const char *title, const char *msg, uint8_t cat)
+{
+    for (int i = FOB_NOTES - 1; i > 0; i--) { sim_notes[i] = sim_notes[i - 1]; }
+    memset(&sim_notes[0], 0, sizeof(fob_note_t)); strcpy(sim_notes[0].app, app); strcpy(sim_notes[0].title, title); strcpy(sim_notes[0].msg, msg);
+    sim_notes[0].cat = cat; sim_notes[0].unread = 1; sim_notes[0].uid = ++sim_gen * 7; sim_notes[0].t_ms = t_ms; if (sim_n < FOB_NOTES) { sim_n++; } sim_call = cat == 1;
 }
 
 #include "onkar_ui.inc"
@@ -153,6 +171,31 @@ int main(void)
         run(13000); char n[32]; snprintf(n, sizeof n, "dim_%d", sc); write_ppm(n, fb, true);
         crown(1); run(400); if (scene == 4) { crown(-1); run(400); }
     }
+    /* ---- the iPhone flow ---- */
+    { touch(true, 184, 224); t_ms += 30; touch(false, 184, 224); }
+    dbl(); run(700); dbl(); run(700);
+    press(); run(700); crown(8); run(1500); crown(0 + 0);
+    while (dial_idx < 8) { crown(1); run(320); }
+    press(); run(700);
+    for (int i = 0; i < 3; i++) { crown(1); run(250); }
+    shot("settings_phone_row");
+    press(); run(700); shot("phone_pair_guide");
+    sim_fa = FA_DISCOVERING; sim_gen++; run(300); shot("phone_pairing");
+    sim_fa = FA_DENIED; sim_gen++; run(300); shot("phone_allow_notifications");
+    sim_fa = FA_READY; sim_gen++; run(300); shot("phone_connected");
+    press(); run(700); shot("phone_advanced");
+    press(); run(700); shot("phone_forget_confirm");
+    dbl(); run(600); dbl(); run(600); dbl(); run(700);
+    sim_note("whatsapp", "riya", "are you free tonight? we could try that new place near the station", 4); run(600); shot("toast_whatsapp");
+    run(4500); sim_note("mail", "stripe", "payout of 4200 sent to your account", 6); run(300); sim_note("messages", "dad", "call me when you are free", 4); run(4500);
+    dbl(); run(700); press(); run(700);
+    while (dial_idx > 3) { crown(-1); run(320); } while (dial_idx < 3) { crown(1); run(320); }
+    press(); run(700); shot("inbox_list"); crown(1); run(300); shot("inbox_list_2");
+    press(); run(500); shot("inbox_detail");
+    dbl(); run(600); dbl(); run(700);
+    sim_note("phone", "mom", "mobile", 1); run(600); shot("incoming_call");
+    press(); run(500); shot("call_answered");
+    sim_fa = FA_NONE; sim_gen++; run(300);
     printf("frames %u (%u sent), avg ui_frame %.1f us on this laptop, saves %d, haptics %d, %d/%d screenshots consistent\n",
            frames, sent_frames, render_ns / frames / 1000.0, saves, haptics, shots - bad_shots, shots);
     return bad_shots ? 1 : 0;

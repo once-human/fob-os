@@ -12,6 +12,8 @@
 
 typedef struct { uint8_t bright, always_on, autostart, timeout, face, accent, haptic, spare2; } T_UI_CFG;   /* face = carry scene; haptic 0 off 1 light 2 medium 3 strong */
 
+#include "fob_ancs.h"
+
 enum { H_TICK, H_SOFT, H_TAP, H_CLICK, H_DOUBLE, H_SUCCESS, H_LONG, H_BUMP, H_ALARM, H_BOOT, H_SCROLL, H_PRESS, H_RELEASE, H_N };
 static void plat_haptic(uint8_t id);
 static int plat_batt(int *mv);          /* 0..100 %, or -1 = no battery seen (charger-only supply) */
@@ -102,7 +104,11 @@ static int dial_idx;
 static uint8_t mem[N_MODES];                    /* per-mode memory: the page or row each mode was left on */
 static uint8_t fade_ph, pend_scr, pend_mode;    /* 0 none, 1 fading out, 2 fading in */
 static bool press_pend; static uint32_t press_t;
+static uint8_t set_sub;                          /* settings: 0 the list, 1 phone, 2 advanced, 3 forget this phone */
+static uint8_t inb_open;                         /* inbox: 1 = reading one notification */
+static uint32_t seen_gen, toast_t0, call_buzz; static bool toast_on, call_ui; static fob_note_t toast_n, call_n;
 #define DBL_MS   300
+#define WSC      4          /* beluga pixel size */
 #define BOOT_END 4700
 
 static void hap(uint8_t id) { if (uc && uc->haptic) { plat_haptic(id); } }
@@ -141,7 +147,7 @@ static void top(const char *mid)
     char *p = u_2(t, h); *p++ = ':'; u_2(p, m);
     hair(20, 120, 30, C_RULE); hair(130, 230, 30, C_RULE); hair(240, 348, 30, C_RULE);
     word(20, 47, FL, t, C_INK, 255); word(130, 47, FL, mid, C_Q, 255);
-    char b[20]; int mv; int pc = plat_batt(&mv); p = u_s(b, plat_bt() ? "bt" : "visible");
+    char b[24]; int mv; int pc = plat_batt(&mv); p = u_s(b, fob_ancs_state() == FA_READY ? "iphone" : (plat_bt() ? "bt" : "visible"));
     if (pc >= 0) { p = u_s(p, " " DOT " "); p = u_num(p, (uint32_t)pc); u_s(p, "%"); }
     word(240, 47, FL, b, C_Q, 255);
 }
@@ -182,16 +188,16 @@ static void draw_boot(uint32_t now)
         float rise = spring((t - 2.0f) / 0.9f), wa = clampf((t - 2.0f) / 0.3f, 0, 1);
         int bob = t > 3.0f ? (int)(sinf((t - 3.0f) * 2.6f) * 2.5f) : 0;
         int flick = (t > 3.0f && ((int)((t - 3.0f) / 0.45f) & 1)) ? 1 : 0;
-        int wx = CX - 70, wy = 140 + (int)((1.f - rise) * 120.f) + bob - 5;
+        int wx = CX - (28 * WSC) / 2, wy = 150 + (int)((1.f - rise) * 120.f) + bob - WSC;
         draw_whale(wx, wy, flick, (uint8_t)(255 * wa));
-        if (t > 3.1f && t < 4.4f) { for (int i = 0; i < 3; i++) { float k = ((t - 3.1f) * 0.8f + i * 0.33f); k -= (int)k; g_circle(wx + 132.f + sinf(k * 9 + i) * 5, wy + 55.f - k * 60.f, 1.8f + i * 0.5f, C_Q, (uint8_t)(200 * (1.f - k))); } }
+        if (t > 3.1f && t < 4.4f) { for (int i = 0; i < 3; i++) { float k = ((t - 3.1f) * 0.8f + i * 0.33f); k -= (int)k; g_circle(wx + 27.f * WSC + sinf(k * 9 + i) * 5, wy + 11.f * WSC - k * 60.f, 1.8f + i * 0.5f, C_Q, (uint8_t)(200 * (1.f - k))); } }
     }
     if (t > 2.6f) { float k = spring((t - 2.6f) / 0.9f), a = clampf((t - 2.6f) / 0.35f, 0, 1); g_icon_c(CX, 372 + (int)((1.f - k) * 30.f), FV, W_FOB, C_INK, (uint8_t)(255 * a)); }
 }
 
 /* ------------------------------------------------------------------ the pet's room */
 static const uint16_t PETC[9] = {RGB(150, 140, 120), RGB(207, 198, 179), RGB(239, 232, 218), RGB(227, 167, 154), RGB(110, 103, 87), C_SIG, 0x0000, 0xFFFF, RGB(43, 43, 43)};
-#define PSC 6
+#define PSC 5
 static uint8_t pet_state(uint32_t now)
 {
     if (dimmed) { return PS_SLEEP; }
@@ -209,7 +215,7 @@ static void sc_pet(uint32_t now)
     if (night) { g_rect(262, 100, 3, 3, RGB(207, 214, 224), 200); g_rect(300, 96, 3, 3, RGB(207, 214, 224), 255); g_rect(318, 122, 3, 3, RGB(207, 214, 224), 160); g_rect(304, 104, 12, 12, RGB(239, 232, 218), 255); g_rect(309, 102, 11, 11, RGB(12, 18, 28), 255); }
     else { g_rect(304, 98, 14, 14, RGB(232, 217, 168), 255); g_rect(266, 124, 36, 6, RGB(106, 127, 144), 255); }
     g_rect(293, 89, 2, 56, RGB(38, 38, 38), 255); g_rect(257, 114, 74, 2, RGB(38, 38, 38), 255);
-    int px = CX - (26 * PSC) / 2, py = 136 + ((st == PS_SLEEP && (tk & 2)) ? 3 : 0);
+    int px = CX - (26 * PSC) / 2, py = 158 + ((st == PS_SLEEP && (tk & 2)) ? 3 : 0);
     for (int i = 0; i < PET_BODY_N; i++) { layer(FP, f_p_off, PET_BODY[i], px, py, PETC[i], 255); }
     for (int i = 0; i < PET_FACE[st].n; i++) { layer(FP, f_p_off, PET_FACE[st].l[i], px, py, PETC[PET_FACE[st].t[i]], 255); }
     if (st == PS_SLEEP) { g_text(272, 124 - ((int)(tk & 3)) * 4 - FONT_TAB[FT]->asc, FT, C_Q, 255, "z"); g_text(292, 100 - ((int)(tk & 3)) * 4 - FONT_TAB[FT]->asc, FT, C_DIM, 255, "z"); }
@@ -342,8 +348,10 @@ static void pill(int x, int y, int w, const char *s, bool on)
     g_rrect((float)x, (float)y, (float)w, 38.f, 19.f, on ? C_INK : C_SF, 255);
     word_c(x + w / 2, y + 26, FB, s, on ? 0x0000 : C_Q, 255);
 }
+static void draw_phone_page(void);
 static void draw_settings(uint32_t now)
 {
+    if (set_sub) { draw_phone_page(); return; }
     (void)now; char b[24]; int row = mem[M_SETTINGS];
     top("settings");
     int y = 70; if (row == 0) { g_circle(9, (float)y + 14, 3.5f, C_SIG, 255); }
@@ -359,9 +367,10 @@ static void draw_settings(uint32_t now)
     word(20, y + 22, FT, "screen", row == 2 ? C_INK : RGB(154, 148, 136), 255);
     int sc = scr_choice();
     pill(30, y + 36, 112, "always on", sc == 0); pill(150, y + 36, 58, "30s", sc == 1); pill(214, y + 36, 58, "1m", sc == 2); pill(278, y + 36, 60, "5m", sc == 3);
-    hair(20, 348, 338, C_LN);
-    char k2[24], v[32], line[64];
-    for (int i = 0; plat_info(i, k2, v) && i < 4; i++) { p = u_s(line, k2); p = u_s(p, "  "); u_s(p, v); word(20, 362 + i * 16, FL, line, C_DIM, 255); }
+    y = 338; hair(20, 348, y, C_LN); if (row == 3) { g_circle(9, (float)y + 28, 3.5f, C_SIG, 255); }
+    word(20, y + 38, FT, "phone", row == 3 ? C_INK : RGB(154, 148, 136), 255);
+    { int fs = fob_ancs_state(); word_r(348, y + 36, FB, fs == FA_READY ? "iphone, connected" : (fs == FA_DISCOVERING ? "pairing..." : (fs == FA_DENIED ? "allow notifications" : "not paired")), fs == FA_READY ? C_SIG : C_Q, 255); }
+    { char k2[24], v[32], line[64]; if (plat_info(0, k2, v)) { p = u_s(line, k2); p = u_s(p, "  "); u_s(p, v); word(20, 398, FL, line, C_DIM, 255); } }
     foot("crown " DOT " move", "press " DOT " change, or touch");
 }
 
@@ -454,6 +463,113 @@ static void tools_act(uint32_t now, int x)
     dirty();
 }
 
+/* ------------------------------------------------------------------ the iPhone: pairing, inbox, pop-ups, calls */
+static void fit_text(char *dst, const char *src, int fi, int maxw, int cap)
+{
+    const font2_t *f = FONT_TAB[fi]; int w = 0, o = 0;
+    for (; *src && o < cap - 3; src++)
+    {
+        const gl_t *g = g_glyph(f, (uint8_t)*src); int a = g ? g->adv : 0;
+        if (w + a > maxw) { dst[o++] = '.'; dst[o++] = '.'; break; }
+        dst[o++] = *src; w += a;
+    }
+    dst[o] = 0;
+}
+static void ago(char *b, uint32_t t_ms, uint32_t now) { uint32_t m = (now - t_ms) / 60000u; if (m == 0) { u_s(b, "now"); } else if (m < 60) { char *p = u_num(b, m); u_s(p, "m"); } else { char *p = u_num(b, m / 60); u_s(p, "h"); } }
+static void step(int n, int y, const char *t) { char d[4]; u_num(d, (uint32_t)n); word(20, y, FT, d, C_SIG, 255); word(52, y - 1, FB, t, C_INK, 255); }
+static void draw_phone_guide(const char *where)
+{
+    int st = fob_ancs_state();
+    top(where);
+    if (st == FA_DISCOVERING) { word(20, 130, FT, "pairing", C_INK, 255); word(20, 162, FB, "looking for your notifications...", C_Q, 255); foot("hold on", "dbl-press " DOT " back"); return; }
+    if (st == FA_DENIED)
+    {
+        word(20, 112, FT, "allow notifications", C_INK, 255); word(20, 142, FB, "the phone is paired but not sharing them.", C_Q, 255);
+        step(1, 214, "open settings, then bluetooth"); step(2, 258, "tap the (i) next to fob"); step(3, 302, "switch on show notifications"); word(20, 352, FL, "then press the crown to try again", C_Q, 255);
+        foot("waiting for the phone", "dbl-press " DOT " back"); return;
+    }
+    word(20, 112, FT, "pair your phone", C_INK, 255); word(20, 142, FB, "no app needed. it uses the iphone itself.", C_Q, 255);
+    step(1, 214, "open settings, then bluetooth"); step(2, 258, "tap fob under other devices"); step(3, 302, "pair, and allow notifications");
+    g_circle(24, 372, 4, C_SIG, 255); word(36, 377, FL, plat_bt() ? "a device is connected, waiting for pairing" : "visible now, waiting for your phone", C_Q, 255);
+    foot("crown " DOT " nothing to do", "dbl-press " DOT " back");
+}
+static void draw_inbox(uint32_t now)
+{
+    if (fob_ancs_state() != FA_READY) { draw_phone_guide("inbox"); return; }
+    int n = fob_ancs_count(), sel = mem[M_INBOX]; if (sel >= n) { sel = n ? n - 1 : 0; mem[M_INBOX] = (uint8_t)sel; }
+    top("inbox");
+    if (!n) { word(20, 140, FT, "nothing waiting", C_INK, 255); word(20, 172, FB, "you are all caught up.", C_Q, 255); foot("dbl-press " DOT " dial", ""); return; }
+    fob_note_t t; char b[120], tm[8];
+    if (inb_open && fob_ancs_get((uint8_t)sel, &t))
+    {
+        g_circle(24, 80, 4, t.unread ? C_SIG : C_DIM, 255); word(36, 85, FL, t.app, C_Q, 255); ago(tm, t.t_ms, now); word_r(348, 85, FL, tm, C_Q, 255);
+        fit_text(b, t.title, FT, 328, sizeof b); word(20, 130, FT, b, C_INK, 255);
+        const char *p = t.msg; int y = 170;                                   /* word-wrapped message */
+        while (*p && y < 380)
+        {
+            int w = 0, o = 0, lastsp = -1; char line[64];
+            while (p[o] && o < 62) { const gl_t *g = g_glyph(FONT_TAB[FB], (uint8_t)p[o]); w += g ? g->adv : 0; if (w > 328) { break; } if (p[o] == ' ') { lastsp = o; } o++; }
+            if (p[o] && lastsp > 0 && w > 328) { o = lastsp; }
+            memcpy(line, p, (size_t)o); line[o] = 0; word(20, y, FB, line, C_INK, 255); y += 26; p += o; while (*p == ' ') { p++; }
+        }
+        foot("dbl-press " DOT " list", ""); return;
+    }
+    int first = sel < 2 ? 0 : sel - 1;
+    for (int r = 0; r < 3 && first + r < n; r++)
+    {
+        int i = first + r, y = 66 + r * 112; bool on = i == sel;
+        if (!fob_ancs_get((uint8_t)i, &t)) { continue; }
+        hair(20, 348, y, C_LN);
+        if (on) { g_rect(8, (float)y + 12, 3, 82, C_SIG, 255); }
+        word(20, y + 28, FL, t.app, t.unread ? C_SIG : C_Q, 255); ago(tm, t.t_ms, now); word_r(348, y + 28, FL, tm, C_Q, 255);
+        fit_text(b, t.title[0] ? t.title : t.app, FT, 328, sizeof b); word(20, y + 62, FT, b, on ? C_INK : RGB(154, 148, 136), 255);
+        fit_text(b, t.msg, FB, 328, sizeof b); word(20, y + 90, FB, b, C_Q, 255);
+    }
+    foot("crown " DOT " scroll", "press " DOT " read");
+}
+static void draw_toast(uint32_t now)
+{
+    char b[120], tm[8]; ago(tm, toast_n.t_ms, now);
+    g_rect(14, 54, 340, 92, C_SF, 255); g_rect(14, 54, 3, 92, C_SIG, 255);
+    word(28, 78, FL, toast_n.app, C_SIG, 255); word_r(342, 78, FL, tm, C_Q, 255);
+    fit_text(b, toast_n.title[0] ? toast_n.title : toast_n.app, FT, 312, sizeof b); word(28, 110, FT, b, C_INK, 255);
+    fit_text(b, toast_n.msg, FB, 312, sizeof b); word(28, 135, FB, b, C_Q, 255);
+}
+static void draw_call(void)
+{
+    char b[120];
+    top("call"); g_circle(24, 96, 4, C_SIG, 255); word(36, 101, FL, call_n.cat == 1 ? "incoming call" : "call", C_SIG, 255);
+    fit_text(b, call_n.title[0] ? call_n.title : call_n.msg, FT, 328, sizeof b); word_c(CX, 236, FT, b, C_INK, 255);
+    word_c(CX, 270, FB, call_n.app, C_Q, 255);
+    foot("press " DOT " answer", "hold " DOT " decline");
+}
+static void draw_phone_page(void)
+{
+    int st = fob_ancs_state();
+    if (set_sub == 1 && st != FA_READY) { draw_phone_guide("phone"); return; }
+    top("phone");
+    if (set_sub == 1)
+    {
+        word(20, 112, FT, "connected", C_INK, 255); word(20, 142, FB, "your iphone is sharing notifications.", C_Q, 255);
+        hair(20, 348, 190, C_LN); word(20, 224, FT, "inbox", C_INK, 255); { char b[24]; char *p = u_num(b, fob_ancs_count()); u_s(p, " waiting"); word_r(348, 222, FB, b, C_Q, 255); }
+        hair(20, 348, 250, C_LN); g_circle(9, 282, 3.5f, C_SIG, 255); word(20, 292, FT, "advanced", C_INK, 255); word_r(348, 291, FB, ">", C_Q, 255);
+        foot("press " DOT " open", "dbl-press " DOT " back");
+    }
+    else if (set_sub == 2)
+    {
+        word(20, 112, FT, "advanced", C_INK, 255); word(20, 142, FB, "you rarely need these.", C_Q, 255);
+        hair(20, 348, 190, C_LN); g_circle(9, 222, 3.5f, C_SIG, 255); word(20, 232, FT, "forget this phone", C_SIG, 255);
+        foot("press " DOT " open", "dbl-press " DOT " back");
+    }
+    else
+    {
+        word(20, 112, FT, "forget your iphone?", C_INK, 255);
+        word(20, 150, FB, "notifications stop. your settings stay.", C_Q, 255); word(20, 176, FB, "you can pair it again at any time.", C_Q, 255);
+        g_ring(CX, 292, 54, 52, RGB(52, 52, 52), 255); word_c(CX, 298, FB, "hold", C_INK, 255);
+        foot("hold the crown " DOT " forget", "dbl-press " DOT " cancel");
+    }
+}
+
 static void draw_mode_stub(void)
 {
     top(MODE_NAME[mode_cur]);
@@ -486,10 +602,17 @@ static void page_step(int mode, int n, int d, uint32_t now)
     if (np < 0 || np >= n) { hap(H_BUMP); return; }
     mem[mode] = (uint8_t)np; hap(H_TICK); dirty();
 }
+static void back_to_dial2(uint32_t now);
 static void dial_go(int ni, uint32_t now) { if (ni < 0 || ni >= N_MODES) { hap(H_BUMP); return; } dial_idx = ni; an_go(&dial_an, (float)ni, 280, now, E_OUT); hap(H_TICK); dirty(); }
 static void open_dial(uint32_t now) { dial_idx = mode_cur; an_set(&dial_an, (float)dial_idx); hap(H_TAP); go(S_DIAL, 0, now); }
 static void enter_mode(uint32_t now) { hap(H_TAP); mode_cur = (uint8_t)dial_idx; if (dial_idx == M_CARRY) { go(S_CARRY, 0, now); } else { go(S_MODE, (uint8_t)dial_idx, now); } }
-static void back_to_dial(uint32_t now) { hap(H_SOFT); dial_idx = mode_cur; an_set(&dial_an, (float)dial_idx); if (torch_on) { torch_on = false; plat_bright(uc->bright); an_set(&bright_an, uc->bright); } go(S_DIAL, 0, now); }
+static void back_to_dial(uint32_t now)
+{
+    if (mode_cur == M_SETTINGS && set_sub) { set_sub--; hap(H_SOFT); dirty(); return; }
+    if (mode_cur == M_INBOX && inb_open) { inb_open = 0; hap(H_SOFT); dirty(); return; }
+    back_to_dial2(now);
+}
+static void back_to_dial2(uint32_t now) { hap(H_SOFT); dial_idx = mode_cur; an_set(&dial_an, (float)dial_idx); if (torch_on) { torch_on = false; plat_bright(uc->bright); an_set(&bright_an, uc->bright); } go(S_DIAL, 0, now); }
 static void settings_apply(int row, int v, uint32_t now)       /* v < 0: the next value */
 {
     if (row == 0) { uint8_t nb = BRIGHTS[0]; for (int i = 0; i < 6; i++) { if (BRIGHTS[i] > uc->bright) { nb = BRIGHTS[i]; break; } } uc->bright = v >= 16 ? (uint8_t)v : nb; plat_bright(uc->bright); an_set(&bright_an, uc->bright); }
@@ -505,7 +628,14 @@ static void main_action(uint32_t now, int x)
     {
         switch (mode_cur)
         {
-        case M_SETTINGS: settings_apply(mem[M_SETTINGS], -1, now); break;
+        case M_SETTINGS:
+            if (set_sub == 1) { if (fob_ancs_state() == FA_READY) { set_sub = 2; hap(H_TAP); dirty(); } else { hap(H_TAP); } }
+            else if (set_sub == 2) { set_sub = 3; hap(H_TAP); dirty(); }
+            else if (set_sub == 3) { hap(H_BUMP); }
+            else if (mem[M_SETTINGS] == 3) { set_sub = 1; hap(H_TAP); dirty(); }
+            else { settings_apply(mem[M_SETTINGS], -1, now); }
+            break;
+        case M_INBOX: if (fob_ancs_state() == FA_READY && fob_ancs_count()) { if (!inb_open) { inb_open = 1; fob_ancs_mark_read(); hap(H_TAP); dirty(); } } break;
         case M_PLAY: play_act(now); break;
         case M_TOOLS: tools_act(now, x); break;
         case M_CARDS: page_step(M_CARDS, 2, mem[M_CARDS] ? -1 : 1, now); break;
@@ -532,7 +662,7 @@ static void ui_touch(bool down, int x, int y, uint32_t now)
             float off = (float)dx; if ((scene == 0 && off > 0) || (scene == N_SCENES - 1 && off < 0)) { off *= 0.3f; }      /* rubber band at the ends */
             an_set(&car_an, off); car_drag = true; dirty();
         }
-        if (scr == S_MODE && mode_cur == M_SETTINGS && ty0 >= 100 && ty0 < 150 && taxis != 2)         /* the brightness slider */
+        if (scr == S_MODE && mode_cur == M_SETTINGS && !set_sub && ty0 >= 100 && ty0 < 150 && taxis != 2)         /* the brightness slider */
         {
             int v = 16 + (int)(clampf((float)(x - SL_X0) / (SL_X1 - SL_X0), 0, 1) * 239.f);
             if (v != uc->bright) { static uint8_t lastd; if (v / 24 != lastd) { lastd = (uint8_t)(v / 24); hap(H_TICK); } uc->bright = (uint8_t)v; plat_bright(uc->bright); an_set(&bright_an, uc->bright); save_soon(now); dirty(); }
@@ -544,7 +674,7 @@ static void ui_touch(bool down, int x, int y, uint32_t now)
     int dx = tx - tx0, dy = ty - ty0, adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy; uint32_t dt = now - tt0;
     if (scr == S_DIAL && tdrag) { dial_idx = (int)(an_val(&dial_an, now) + 0.5f); dial_idx = dial_idx < 0 ? 0 : (dial_idx >= N_MODES ? N_MODES - 1 : dial_idx); an_go(&dial_an, (float)dial_idx, 220, now, E_OUT); hap(H_TICK); dirty(); return; }
     bool swipe_h = adx > 56 && adx > ady * 1.3f, swipe_v = ady > 56 && ady > adx * 1.3f;
-    if (scr == S_MODE && mode_cur == M_SETTINGS && ty0 >= 100 && ty0 < 150 && tx0 >= 24) { return; }       /* a slider drag is not a swipe */
+    if (scr == S_MODE && mode_cur == M_SETTINGS && !set_sub && ty0 >= 100 && ty0 < 150 && tx0 >= 24) { return; }       /* a slider drag is not a swipe */
     if (scr == S_CARRY)
     {
         if (car_drag)
@@ -575,8 +705,10 @@ static void ui_touch(bool down, int x, int y, uint32_t now)
         if (tmoved) { return; }
         if (mode_cur == M_PLAY && mem[M_PLAY] == 3 && dt > 800) { tally = 0; hap(H_LONG); dirty(); return; }
         if (mode_cur == M_TOOLS && mem[M_TOOLS] == 1 && dt > 800) { sw_acc = 0; sw_run = false; hap(H_LONG); dirty(); return; }
+        if (mode_cur == M_SETTINGS && set_sub) { main_action(now, tx0); return; }
         if (mode_cur == M_SETTINGS)
         {
+            if (ty0 >= 338 && ty0 < 382) { mem[M_SETTINGS] = 3; main_action(now, tx0); return; }
             if (ty0 >= 196 && ty0 < 244) { int i = (tx0 - 30) / 78; if (i >= 0 && i < 4) { settings_apply(1, i, now); mem[M_SETTINGS] = 1; } }
             else if (ty0 >= 294 && ty0 < 334) { int c = tx0 < 146 ? 0 : tx0 < 210 ? 1 : tx0 < 274 ? 2 : 3; settings_apply(2, c, now); mem[M_SETTINGS] = 2; }
             return;
@@ -598,7 +730,8 @@ static void ui_crown(int d, uint32_t now)
     {
         switch (mode_cur)
         {
-        case M_SETTINGS: { int nr = mem[M_SETTINGS] + d; if (nr < 0 || nr > 2) { hap(H_BUMP); } else { mem[M_SETTINGS] = (uint8_t)nr; hap(H_TICK); dirty(); } break; }
+        case M_SETTINGS: { if (set_sub) { break; } int nr = mem[M_SETTINGS] + d; if (nr < 0 || nr > 3) { hap(H_BUMP); } else { mem[M_SETTINGS] = (uint8_t)nr; hap(H_TICK); dirty(); } break; }
+        case M_INBOX: { int n = fob_ancs_count(); if (inb_open || fob_ancs_state() != FA_READY) { break; } int nr = mem[M_INBOX] + d; if (nr < 0 || nr >= n) { hap(H_BUMP); } else { mem[M_INBOX] = (uint8_t)nr; hap(H_TICK); dirty(); } break; }
         case M_CARDS: page_step(M_CARDS, 2, d, now); break;
         case M_PLAY: page_step(M_PLAY, 4, d, now); break;
         case M_TOOLS: page_step(M_TOOLS, 3, d, now); break;
@@ -619,11 +752,13 @@ static void ui_button(bool long_press, uint32_t now)
     if (sleeping) { wake(now); return; }
     if (lowbat) { if (!long_press) { wake(now); dirty(); } return; }
     if (scr == S_BOOT) { return; }
+    if (call_ui) { touched(now); if (long_press) { fob_ancs_action(call_n.uid, false); hap(H_LONG); } else { fob_ancs_action(call_n.uid, true); hap(H_SUCCESS); } call_ui = false; dirty(); return; }
     if (dimmed && !long_press) { touched(now); return; }          /* a press from the glow only wakes it */
     touched(now);
     if (long_press)
     {
         press_pend = false;
+        if (scr == S_MODE && mode_cur == M_SETTINGS && set_sub == 3) { fob_ancs_forget(); set_sub = 1; hap(H_LONG); dirty(); return; }
         if (scr == S_MODE && mode_cur == M_PLAY && mem[M_PLAY] == 3) { tally = 0; hap(H_LONG); dirty(); return; }
         hap(H_LONG); if (torch_on) { torch_on = false; } go_sleep(now); return;
     }
@@ -705,6 +840,25 @@ static bool ui_frame(uint32_t now)
     }
     if (lowbat && now - last_input > 4000) { go_sleep(now); last_input = now; }
 
+    /* the iPhone: a new notification pops up, a call takes over the screen */
+    { uint32_t g = fob_ancs_gen();
+      if (g != seen_gen)
+      {
+          seen_gen = g; dirty();
+          fob_note_t n;
+          if (fob_ancs_get(0, &n) && n.unread && n.uid != toast_n.uid && !lowbat && scr != S_BOOT)
+          {
+              toast_n = n; toast_on = true; toast_t0 = now;
+              if (sleeping) { wake(now); } else { touched(now); }
+              uint8_t h = (uint8_t)(n.app[0] + n.app[1]); hap(h % 3 == 0 ? H_DOUBLE : (h % 3 == 1 ? H_TAP : H_SUCCESS));
+          }
+          call_ui = fob_ancs_call_active(&call_n);
+          if (call_ui) { if (sleeping) { wake(now); } else { touched(now); } call_buzz = now; }
+      }
+      if (toast_on && now - toast_t0 > 4000) { toast_on = false; dirty(); }
+      if (toast_on) { busy = busy; }
+      if (call_ui && (int32_t)(now - call_buzz) >= 0) { hap(H_ALARM); call_buzz = now + 1500; } }
+
     /* things that tick: the clock, the pet, the metronome, stopwatch, torch countdown */
     uint32_t h, m, s; time_parts(&h, &m, &s); uint32_t sec = plat_now_s();
     if (sec != last_sec)
@@ -726,6 +880,7 @@ static bool ui_frame(uint32_t now)
     gfx_invalidate_all(); full_dirty = false;
     if (fade_ph) { g_alpha = (uint8_t)(255.f * clampf(an_val(&fade_an, now), 0, 1)); }
     if (dimmed && scr == S_CARRY) { g_ox = (int)(m % 3) * 2 - 2; g_oy = (int)((m / 3) % 3) * 2 - 2; }          /* burn-in guard: the picture drifts a few pixels */
+    if (call_ui) { draw_call(); } else
     switch (scr)
     {
     case S_BOOT: draw_boot(now); break;
@@ -735,6 +890,7 @@ static bool ui_frame(uint32_t now)
         switch (mode_cur)
         {
         case M_SETTINGS: draw_settings(now); break;
+        case M_INBOX: draw_inbox(now); break;
         case M_CARDS: draw_cards(now); break;
         case M_PLAY: draw_play(now); break;
         case M_TOOLS: draw_tools(now); break;
@@ -744,6 +900,7 @@ static bool ui_frame(uint32_t now)
     default: draw_low(); break;
     }
     g_alpha = 255; g_ox = g_oy = 0;
+    if (toast_on && !call_ui && scr != S_BOOT) { draw_toast(now); }
     plat_vsync(!busy);
     gfx_flush();
     return busy;

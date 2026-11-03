@@ -883,6 +883,7 @@ static bool quad_fill(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1, uint8_
     return true;
 }
 
+#include "fob_ancs.h"
 #include "onkar_os.inc"
 
 /* ------------------------------------------------------------------ watchdog + heartbeat */

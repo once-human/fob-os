@@ -13,7 +13,7 @@ ASCII = [chr(c) for c in range(32, 127)]
 GAMMA = 0.85          # >1 thinner, <1 bolder edges (AMOLED + sRGB blending makes thin text look starved)
 LOWER = set("abcdefghijklmnopqrstuvwxyz0123456789 .,:;%+-/()'?!&<>=`^")
 FONTS = [  # name, file, px, chars, keep, tabular digits, tracking
-    ("F_N", A800, 112, [chr(c) for c in range(37, 59)], set("%0123456789:"), True, -0.045),
+    ("F_N", A800, 96, [chr(c) for c in range(37, 59)], set("%0123456789:"), True, -0.045),
     ("F_T", A800, 30, ASCII, LOWER, False, -0.02),
     ("F_B", A400, 17, ASCII, LOWER, False, 0),
     ("F_L", A400, 12, ASCII, LOWER, False, 0),
@@ -95,7 +95,7 @@ def star_img(size):
 
 def star():
     glyphs, blob = [], bytearray()
-    for size in (150, 40):
+    for size in (124, 36):
         im = star_img(size); w, h = im.size
         glyphs.append((len(blob), w, h, 0, 0, w)); blob += encode(im)
     return emit("F_X", glyphs, blob, 0, 2, 0, 0, "#define F_X_STAR 0\n#define F_X_STAR_S 1\n")
@@ -272,26 +272,26 @@ s, n = star(); hdr.append(s); total += n; print(f"F_X  star  {n:6d} bytes")
 # words (fit-to-width bitmaps)
 wim = []
 for w in WORDS:
-    im, px = word_bitmap(w, 272 if w != "fob" else 200)
+    im, px = word_bitmap(w, 240 if w != "fob" else 170)
     wim.append((im, (0, 0))); print(f"word {w:9s} {px:3d}px {im.size}")
 sv, n = layers_font("F_V", wim, "".join(f"#define W_{w.upper()} {i}\n" for i, w in enumerate(WORDS))); hdr.append(sv); total += n; print("F_V words", n, "bytes")
 # beluga: 2 frames x 7 layers
 wl = []
 for fl in (0, -1):
-    lay = grid_layers(whale_grid(fl), 5, WTONES)
+    lay = grid_layers(whale_grid(fl), 4, WTONES)
     for t in WTONES: wl.append(lay[t] if t in lay else (Image.new("L", (1, 1), 0), (0, 0)))
 sw, n = layers_font("F_W", wl, "#define WH_LAYERS 7\n"); hdr.append(sw); total += n; print("F_W whale", n, "bytes")
 # pet: body layers (state 'none'), then per-state face overlays
 pl, pmap = [], {}
 base = pet_grid('idle', face=False)
 for t in PTONES:
-    lay = grid_layers(base, 6, [t])
+    lay = grid_layers(base, 5, [t])
     pmap[("body", t)] = len(pl); pl.append(lay[t] if t in lay else (Image.new("L", (1, 1), 0), (0, 0)))
 for st in PSTATES:
     g = pet_grid(st)
     diff = [[(g[y][x] if g[y][x] != base[y][x] else '.') for x in range(PW)] for y in range(PH)]
     for t in PTONES:
-        lay = grid_layers(diff, 6, [t])
+        lay = grid_layers(diff, 5, [t])
         if t in lay: pmap[(st, t)] = len(pl); pl.append(lay[t])
 sp, n = layers_font("F_P", pl); hdr.append(sp); total += n; print("F_P pet", n, "bytes,", len(pl), "layers")
 body = ",".join(str(pmap[("body", t)]) for t in PTONES)

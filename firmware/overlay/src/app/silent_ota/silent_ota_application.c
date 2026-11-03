@@ -18,6 +18,7 @@
 #include "gap_adv.h"
 #include "gap_msg.h"
 #include "gap_bond_le.h"
+#include "fob_ancs.h"
 #include "gap_conn_le.h"
 #include "profile_server.h"
 #include "app_msg.h"
@@ -83,6 +84,8 @@ uint16_t g_bas_battery_level;
  *============================================================================*/
 T_GAP_DEV_STATE gap_cur_state = {0, 0, 0, 0};
 T_GAP_CONN_STATE gap_conn_state = GAP_CONN_STATE_DISCONNECTED;
+volatile uint8_t g_links;      /* connections open right now (the laptop, the iPhone) */
+static void disconnect_all(void) { le_disconnect(0); le_disconnect(1); }
 
 static bool switch_to_ota_mode_pending = false;
 static bool dfu_active_rst_pending = false;
@@ -217,7 +220,10 @@ void periph_handle_conn_state_evt(uint8_t conn_id, T_GAP_CONN_STATE new_state, u
     {
     case GAP_CONN_STATE_DISCONNECTED:
         {
-            onkar_on_disconnect();
+            if (g_links) { g_links--; }
+            bool was_phone = fob_ancs_state() != FA_NONE && fob_ancs_is_phone(conn_id);
+            fob_ancs_link_down(conn_id);
+            if (!was_phone) { onkar_on_disconnect(); }            /* the phone leaving must not disturb a laptop update */
             if ((disc_cause != (HCI_ERR | HCI_ERR_REMOTE_USER_TERMINATE))
                 && (disc_cause != (HCI_ERR | HCI_ERR_LOCAL_HOST_TERMINATE)))
             {
@@ -252,6 +258,8 @@ void periph_handle_conn_state_evt(uint8_t conn_id, T_GAP_CONN_STATE new_state, u
 
     case GAP_CONN_STATE_CONNECTED:
         {
+            if (g_links < 2) { g_links++; }
+            if (g_links < 2) { le_adv_start(); }                  /* keep advertising: the other device can still connect */
             uint16_t conn_interval;
             uint16_t conn_latency;
             uint16_t conn_supervision_timeout;
@@ -811,7 +819,7 @@ static T_APP_RESULT app_ota_srv_cb(T_OTA_CALLBACK_DATA *p_data)
                 APP_PRINT_INFO0("Preparing switch into OTA mode");
                 /*prepare to enter OTA mode, before switch action, we should disconnect first.*/
                 switch_to_ota_mode_pending = true; onkar_dfu_activity();
-                le_disconnect(0);
+                disconnect_all();
             }
         }
         break;
@@ -873,7 +881,7 @@ static T_APP_RESULT app_dfu_srv_cb(T_DFU_CALLBACK_DATA *p_data)
                                 lock_flash_bp();
                             }
 #endif
-                            le_disconnect(0);
+                            disconnect_all();
                             dfu_active_rst_pending = true;
                         }
                         break;

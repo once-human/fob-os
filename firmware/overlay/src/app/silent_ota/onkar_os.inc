@@ -532,7 +532,8 @@ static void plat_display(bool on)
     if (on) { lcd_cmd1(0x29, 0x00); oos_state = OS_RUN; }
     else { lcd_cmd1(0x51, 0); bright_set = 0; lcd_cmd1(0x28, 0x00); oos_state = OS_SLEEP; }
 }
-static bool plat_bt(void) { return gap_conn_state == GAP_CONN_STATE_CONNECTED; }
+extern volatile uint8_t g_links;
+static bool plat_bt(void) { return g_links > 0; }
 static uint32_t plat_now_s(void) { return epoch_at_set + (os_sys_time_get() - ms_at_set) / 1000; }
 static bool plat_time_ok(void) { return time_set; }
 static void plat_save(void) { cfg_save(); }

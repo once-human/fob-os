@@ -52,6 +52,8 @@ C_SOURCES =  \
 ../../../src/ble/profile/server/dfu_service.c \
 ../../../src/ble/profile/server/simple_ble_service.c \
 ../../../src/app/silent_ota/onkar_tool.c \
+../../../src/app/silent_ota/fob_ancs.c \
+../../../src/ble/profile/client/ancs_client.c \
 ../../../src/mcu/peripheral/rtl876x_adc.c \
 ../../../src/mcu/peripheral/rtl876x_io_dlps.c \
 ../../../src/mcu/peripheral/rtl876x_gpio.c \
@@ -141,6 +143,7 @@ C_INCLUDES =  \
 -I../../../inc/bluetooth/profile/server \
 -I../../../inc/peripheral \
 -I../../../inc/bluetooth/profile \
+-I../../../inc/bluetooth/profile/client \
 -I../../../inc/bluetooth/gap \
 -I../../../inc/bluetooth/gap/gap_lib \
 -I../../../inc/bluetooth/profile/server \

@@ -36,6 +36,7 @@
 #include "flash_device.h"
 #include "app_task.h"
 #include "silent_ota_application.h"
+#include "fob_ancs.h"
 #include "board.h"
 #include "mem_config.h"
 #include "otp.h"
@@ -80,6 +81,11 @@ static uint8_t SCAN_RSP_DATA[] =
     GAP_ADTYPE_APPEARANCE,              /* type="Appearance" */
     LO_WORD(GAP_GATT_APPEARANCE_GENERIC_WATCH),
     HI_WORD(GAP_GATT_APPEARANCE_GENERIC_WATCH), /*0xc1, 0x03: Key Board */
+
+    /* "list of 128-bit service UUIDs the device wants to use": Apple's notification service (ANCS). This is what makes an
+       iPhone list the device under Settings > Bluetooth and offer to share notifications with it. */
+    0x11, 0x15,
+    0xD0, 0x00, 0x2D, 0x12, 0x1E, 0x4B, 0x0F, 0xA4, 0x99, 0x4E, 0xCE, 0xB5, 0x31, 0xF4, 0x05, 0x79,
 };
 
 static uint8_t ADV_DATA[] =
@@ -212,6 +218,7 @@ void app_le_profile_init(void)
     g_ota_service_id = ota_add_service(app_profile_callback);
     g_simp_service_id = simp_ble_service_add_service(app_profile_callback);
     server_register_app_cb(app_profile_callback);
+    fob_ancs_init();
 }
 /**
  * @brief    pinmux configuration
@@ -588,7 +595,7 @@ int main(void)
     print_all_images_version();
 
     board_init();
-    le_gap_init(1);
+    le_gap_init(2);                  /* the iPhone and the laptop can be connected at the same time */
     gap_lib_init();
     app_le_gap_init();
     app_le_profile_init();
