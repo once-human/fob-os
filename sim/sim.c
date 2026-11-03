@@ -27,6 +27,7 @@ static void gfx_out_wait(void) {}
 static void gfx_frame_start(void) {}
 static uint32_t plat_ms(void) { return t_ms; }
 static void plat_bright(uint8_t v) { s_bright = v; }
+static bool plat_bright_ready(void) { return true; }
 static void plat_display(bool on) { s_disp = on; }
 static bool plat_bt(void) { return true; }
 static uint32_t plat_now_s(void) { return epoch0 + t_ms / 1000; }
@@ -46,7 +47,7 @@ static bool plat_info(int i, char *k, char *v)
 
 #include "onkar_ui.inc"
 
-static T_UI_CFG cfg = {180, 0, 1, 1, 0, 0, 2, 0};
+static T_UI_CFG cfg = {180, 1, 1, 1, 0, 0, 2, 0};
 static int shots, bad_shots;
 
 static void frame(void)
@@ -93,30 +94,49 @@ static void shot(const char *name)
 static void crown(int d) { ui_crown(d, t_ms); frame(); }
 static void press(void) { ui_button_edge(true, t_ms); t_ms += 60; ui_button_edge(false, t_ms); ui_button(false, t_ms); frame(); }
 static void dbl(void) { press(); t_ms += 90; press(); }
+static void touch(bool d, int x, int y) { ui_touch(d, x, y, t_ms); frame(); }
+static void tap(int x, int y) { touch(true, x, y); t_ms += 16; touch(true, x, y); t_ms += 50; touch(false, x, y); }
+static void drag(int x0, int y0, int x1, int y1, int ms)
+{
+    touch(true, x0, y0); int n = ms / 16;
+    for (int i = 1; i <= n; i++) { t_ms += 16; touch(true, x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n); }
+    t_ms += 16; touch(false, x1, y1);
+}
 
 int main(void)
 {
     ui_init(&cfg, 0);
     ui_boot_lit(0);
-    for (int i = 0; i < 6; i++) { run(250); char n[32]; snprintf(n, sizeof n, "boot_%d", i); write_ppm(n, fb, s_disp); }
-    run(1500); shot("carry_me");
-    crown(1); run(120); write_ppm("carry_slide_mid", fb, true); run(500); shot("carry_stack");
+    for (int i = 0; i < 20; i++) { run(250); char n[32]; snprintf(n, sizeof n, "boot_%02d", i); if (i % 2 == 1 || i < 6) { write_ppm(n, fb, s_disp); } }
+    run(800); shot("carry_me");
+    crown(1); run(120); write_ppm("carry_slide_mid", fb, true); run(500); shot("carry_pet");
+    crown(1); run(600); shot("carry_stack");
     crown(1); run(600); shot("carry_hairline");
     crown(1); run(600); shot("carry_day");
-    crown(1); run(100);                                   /* end of the scenes: a bump, no change */
-    press(); run(700); shot("dial_from_carry");
-    crown(1); run(120); write_ppm("dial_mid", fb, true); run(500); shot("dial_cards");
-    for (int i = 0; i < 4; i++) { crown(1); run(320); }
-    shot("dial_remote");
+    crown(-4); run(900);
+    drag(300, 220, 80, 224, 160); run(500); shot("swipe_to_pet");
+    drag(184, 400, 184, 200, 160); run(700); shot("dial_by_swipe_up");
+    drag(184, 330, 184, 90, 200); run(500); shot("dial_dragged");
+    tap(184, 230); run(700); shot("mode_entered_by_tap");
+    dbl(); run(700);
+    for (int i = 0; i < 5; i++) { crown(1); run(320); } shot("dial_remote");
     press(); run(700); shot("mode_stub");
-    dbl(); run(700); shot("back_to_dial");
-    for (int i = 0; i < 4; i++) { crown(1); run(320); }
-    shot("dial_settings");
-    press(); run(700); shot("settings");
-    press(); run(500); shot("settings_bright_changed");
-    crown(1); run(200); press(); run(500); shot("settings_haptics");
-    dbl(); run(700); dbl(); run(700); shot("carry_after_double");
-    printf("  carry resumed on scene %d (expected 3)\n", scene);
+    dbl(); run(700);
+    crown(-4); run(900); shot("dial_cards");
+    press(); run(700); shot("cards_site");
+    crown(1); run(300); shot("cards_github");
+    dbl(); run(700); crown(5); run(900); press(); run(700); shot("play_coin");
+    press(); run(300); run(900); shot("play_result"); crown(1); run(300); crown(1); run(300); crown(1); run(300); press(); run(200); shot("play_tally");
+    dbl(); run(700); crown(1); run(320); press(); run(700); shot("tools_torch");
+    press(); run(300); shot("torch_on"); press(); run(300);
+    crown(1); run(300); shot("tools_stopwatch"); press(); run(1300); shot("stopwatch_running");
+    crown(1); run(300); shot("tools_metronome");
+    dbl(); run(700); crown(1); run(320); press(); run(700); shot("settings");
+    tap(200, 124); run(300); shot("settings_slider_tap");
+    drag(60, 124, 300, 124, 200); run(300); shot("settings_slider_drag");
+    tap(160, 220); run(300); shot("settings_haptics_tap"); tap(246, 312); run(300); shot("settings_screen_pill");
+    dbl(); run(700); dbl(); run(700); shot("carry_back");
+    printf("  carry resumed on scene %d (expected 4)\n", scene);
     run(12000); shot("carry_dimmed");
     crown(1); run(400); shot("carry_woken");
     ui_lowbat(true, t_ms); run(800); shot("lowbat");

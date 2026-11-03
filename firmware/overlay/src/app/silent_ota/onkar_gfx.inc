@@ -21,7 +21,7 @@
 
 #define RGB(r, g, b) ((uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xFC) << 3) | ((b) >> 3)))
 
-static const font2_t *const FONT_TAB[] = {&F_G, &F_N, &F_T, &F_B, &F_L, &F_X};   /* ids FG..FX come from the font header */
+static const font2_t *const FONT_TAB[] = {&F_N, &F_T, &F_B, &F_L, &F_X, &F_V, &F_W, &F_P};   /* ids FN..FP come from the font header */
 
 enum { G_RRECT, G_RING, G_ARC, G_LINE, G_TEXT, G_ICON, G_HOOK };
 

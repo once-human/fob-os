@@ -39,7 +39,7 @@ extern T_GAP_CONN_STATE gap_conn_state;
 
 #define OS_TICK_MS      20
 #define OS_FTL_OFFSET   0x200
-#define OS_MAGIC        0x344B4E4F      /* "ONK4": v18 resets settings (haptics, crown mode, ramp back to fast) */
+#define OS_MAGIC        0x354B4E4F      /* "ONK5": fob 0.2 starts from fresh defaults (always on) */
 
 /* the renderer + UI: speed where it counts, size everywhere else */
 #pragma GCC push_options
@@ -84,6 +84,7 @@ static void cfg_defaults(void)
     cfg.te_sync = 0;                /* TE wait cost ~25 ms per frame (14.5 fps vs 43 ms render) */
     cfg.ui.bright = 180;
     cfg.ui.autostart = 1;
+    cfg.ui.always_on = 1;           /* carry is the always-on display */
     cfg.ui.timeout = 1;             /* 15 s */
     cfg.ui.accent = 0;              /* orange */
     cfg.ui.haptic = 2;              /* medium */
@@ -522,6 +523,7 @@ static void bright_apply(void)
     if (v != bright_set && (oos_state == OS_RUN || oos_state == OS_SLEEP)) { bright_set = v; lcd_cmd1(0x51, v); }
 }
 static void plat_bright(uint8_t v) { bright_req = v; bright_apply(); }
+static bool plat_bright_ready(void) { return bright_cap >= bright_req; }
 static void plat_display(bool on)
 {
     if (oos_state != OS_RUN && oos_state != OS_SLEEP) { return; }
@@ -539,7 +541,7 @@ static bool plat_info(int i, char *k, char *v)
     uint32_t up = os_sys_time_get() / 1000;
     switch (i)
     {
-    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.1"); break;
+    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.2"); break;
     case 1: u_s(k, "Running for"); p = u_num(p, up / 3600); p = u_s(p, "h "); p = u_num(p, (up / 60) % 60); u_s(p, "m"); break;
     case 2: u_s(k, "Bluetooth"); u_s(v, plat_bt() ? "Connected" : "Visible, not connected"); break;
     case 3: u_s(k, "Clock"); u_s(v, time_set ? "Synced from laptop" : time_restored ? "Restored (may be behind)" : "Not set"); break;
