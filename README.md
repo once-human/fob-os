@@ -35,6 +35,7 @@ tools/                wireless flashing and control over Bluetooth (run.sh, ota_
 - Never touch pins P1_3 and P1_4 (they freeze the chip).
 - Never switch the OLED supply (P2_5) on hard, and never unconditionally at boot: a boot loop would end wireless flashing. Use the PWM soft start and the boot back-off.
 - Bluetooth and the update path must work in every build. It is the only way back in.
+- **Never change Bluetooth start-up (link count, advertising data, new GATT roles) in a build that is flashed over Bluetooth, unless a boot-time fallback restores the old settings.** On 2026-11-03 a build with two links, a 34-byte scan response and a second GATT client left the watch not advertising and unreachable. Test such changes behind a fallback that is cleared only after the stack reports ready.
 - The screen's four data lines (D0..D3) must all be claimed; two floating lines caused the early colour corruption.
 
 ## Flashing
