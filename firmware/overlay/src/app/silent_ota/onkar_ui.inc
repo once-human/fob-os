@@ -17,6 +17,7 @@ static void plat_haptic(uint8_t id);
 static int plat_batt(int *mv);          /* 0..100 %, or -1 = no battery seen (charger-only supply) */
 static uint32_t plat_ms(void);
 static void plat_bright(uint8_t v);
+static void plat_vsync(bool on);        /* true: send this frame in step with the panel's refresh (still pictures); false: as fast as possible (motion) */
 static bool plat_bright_ready(void);    /* the panel has reached the requested brightness (the supply ramps it up after boot) */
 static void plat_display(bool on);
 static bool plat_bt(void);
@@ -228,7 +229,7 @@ static void qr_hook(uint16_t *row, int y, int x0, int x1, int bx)
 }
 static void draw_qr(int idx, int x, int y, int s)
 {
-    qr_m = idx ? QR1 : QR0; qr_n = idx ? QR1_N : QR0_N; qr_x = x; qr_y = y; qr_s = s;
+    qr_m = idx ? QR1 : QR0; qr_n = idx ? QR1_N : QR0_N; qr_x = x + g_ox; qr_y = y + g_oy; qr_s = s;      /* the hook works in screen pixels: it must follow the offset */
     g_hook(x, y, x + qr_n * s, y + qr_n * s, qr_hook);
 }
 static void sc_me(void)
@@ -262,7 +263,7 @@ static void sc_ring(void)
     float ha = ((h % 12) + m / 60.f) * 0.523599f, ma = (m + s / 60.f) * 0.104720f, sa = s * 0.104720f;
     g_line(cx, cy, cx + sinf(ha) * 78, cy - cosf(ha) * 78, 2.6f, C_INK, 255);
     g_line(cx, cy, cx + sinf(ma) * 122, cy - cosf(ma) * 122, 1.6f, C_INK, 255);
-    g_line(cx, cy, cx + sinf(sa) * 136, cy - cosf(sa) * 136, 0.8f, C_SIG, 255);
+    if (!dimmed) { g_line(cx, cy, cx + sinf(sa) * 136, cy - cosf(sa) * 136, 0.8f, C_SIG, 255); }      /* the always-on picture does not tick */
     g_circle(cx, cy, 5, C_SIG, 255);
 }
 static void sc_day(void)
@@ -673,7 +674,7 @@ static bool ui_frame(uint32_t now)
         uint32_t idle = now - last_input;
         if (scr == S_CARRY)
         {
-            if (!dimmed && idle > 10000) { dimmed = true; uint8_t lo = (uint8_t)(uc->bright / 4); an_go(&bright_an, lo < 16 ? 16 : lo, 1200, now, E_INOUT); dirty(); }
+            if (!dimmed && idle > 10000) { dimmed = true; uint8_t lo = (uint8_t)(uc->bright / 3); if (lo < 40) { lo = 40; } if (lo > uc->bright) { lo = uc->bright; } an_go(&bright_an, lo, 1200, now, E_INOUT); dirty(); }
             if (!uc->always_on && idle > (uint32_t)TIMEOUTS[uc->timeout > 4 ? 4 : uc->timeout] * 1000u) { go_sleep(now); }
         }
         else if (idle > 25000 && !torch_on && !met_run && !sw_run) { go(S_CARRY, 0, now); }
@@ -686,7 +687,7 @@ static bool ui_frame(uint32_t now)
     if (sec != last_sec)
     {
         last_sec = sec;
-        if (scr == S_CARRY && scene == 3) { dirty(); }
+        if (scr == S_CARRY && scene == 3 && !dimmed) { dirty(); }
         if (scr == S_MODE && ((mode_cur == M_TOOLS && (torch_on || mem[M_TOOLS] % 3 == 1)) || (mode_cur == M_PLAY && play_t0))) { dirty(); }
     }
     if (m != last_min) { last_min = m; dirty(); }
@@ -701,7 +702,7 @@ static bool ui_frame(uint32_t now)
     gfx_begin(C_BG);
     gfx_invalidate_all(); full_dirty = false;
     if (fade_ph) { g_alpha = (uint8_t)(255.f * clampf(an_val(&fade_an, now), 0, 1)); }
-    if (dimmed && scr == S_CARRY) { g_ox = (int)(m % 3) * 3 - 3; g_oy = (int)((m / 3) % 3) * 3 - 3; }          /* burn-in guard: the picture drifts a few pixels */
+    if (dimmed && scr == S_CARRY) { g_ox = (int)(m % 3) * 2 - 2; g_oy = (int)((m / 3) % 3) * 2 - 2; }          /* burn-in guard: the picture drifts a few pixels */
     switch (scr)
     {
     case S_BOOT: draw_boot(now); break;
@@ -720,6 +721,7 @@ static bool ui_frame(uint32_t now)
     default: draw_low(); break;
     }
     g_alpha = 255; g_ox = g_oy = 0;
+    plat_vsync(!busy);
     gfx_flush();
     return busy;
 }

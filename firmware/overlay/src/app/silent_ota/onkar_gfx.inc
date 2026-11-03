@@ -41,6 +41,7 @@ typedef struct
 
 static gprim_t g_dl[DL_MAX];
 static uint8_t g_n;
+static uint16_t g_drops;        /* primitives that did not fit the display list (a design bug: shows as missing pieces) */
 static char g_pool[POOL_MAX];
 static uint16_t g_pool_n;
 static uint16_t g_bg;
@@ -115,7 +116,7 @@ static void g_reset_clip(void) { g_clip.x0 = 0; g_clip.y0 = 0; g_clip.x1 = LCD_W
 
 static gprim_t *g_add(uint8_t t, uint16_t c, uint8_t a, float bx0, float by0, float bx1, float by1)
 {
-    if (g_n >= DL_MAX) { return NULL; }
+    if (g_n >= DL_MAX) { g_drops++; return NULL; }
     uint8_t ga = (uint8_t)(((uint32_t)a * g_alpha + 127) / 255);
     if (!ga) { return NULL; }
     grect_t bb = {(int16_t)g_floor(bx0 + g_ox), (int16_t)g_floor(by0 + g_oy), (int16_t)g_ceil(bx1 + g_ox), (int16_t)g_ceil(by1 + g_oy)};

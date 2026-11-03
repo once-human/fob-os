@@ -252,9 +252,11 @@ static void lcd_window(uint16_t x0, uint16_t x1, uint16_t y0, uint16_t y1)
 }
 
 /* start of a panel refresh (TE, P3_0), so a frame doesn't tear; max ~20 ms */
+static bool vs_req;
+static void plat_vsync(bool on) { vs_req = on; }      /* the UI asks for panel-synced updates when nothing is moving (no tearing on a still picture) */
 static void te_wait(void)
 {
-    if (!cfg.te_sync) { return; }
+    if (!cfg.te_sync && !vs_req) { return; }
     uint32_t m = GPIO_GetPin(P3_0);
     uint32_t guard = 0;
     while ((g_read() & m) && guard < 20000) { platform_delay_us(1); guard++; }
@@ -541,7 +543,7 @@ static bool plat_info(int i, char *k, char *v)
     uint32_t up = os_sys_time_get() / 1000;
     switch (i)
     {
-    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.2"); break;
+    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.3"); break;
     case 1: u_s(k, "Running for"); p = u_num(p, up / 3600); p = u_s(p, "h "); p = u_num(p, (up / 60) % 60); u_s(p, "m"); break;
     case 2: u_s(k, "Bluetooth"); u_s(v, plat_bt() ? "Connected" : "Visible, not connected"); break;
     case 3: u_s(k, "Clock"); u_s(v, time_set ? "Synced from laptop" : time_restored ? "Restored (may be behind)" : "Not set"); break;

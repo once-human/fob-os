@@ -28,6 +28,7 @@ static void gfx_frame_start(void) {}
 static uint32_t plat_ms(void) { return t_ms; }
 static void plat_bright(uint8_t v) { s_bright = v; }
 static bool plat_bright_ready(void) { return true; }
+static void plat_vsync(bool on) { (void)on; }
 static void plat_display(bool on) { s_disp = on; }
 static bool plat_bt(void) { return true; }
 static uint32_t plat_now_s(void) { return epoch0 + t_ms / 1000; }
@@ -89,7 +90,7 @@ static void shot(const char *name)
     for (int y = 0; y < LCD_H; y++) for (int x = 0; x < LCD_W; x++) if (ref[y][x] != inc[y][x]) { diff++; if (x < bx0) bx0 = x; if (y < by0) by0 = y; if (x > bx1) bx1 = x; if (y > by1) by1 = y; }
     shots++;
     if (diff) { bad_shots++; printf("  %-22s STALE %d px in [%d,%d]-[%d,%d]\n", name, diff, bx0, by0, bx1, by1); }
-    else { printf("  %-22s ok  scr %d bright %3d\n", name, scr, s_bright); }
+    else { printf("  %-22s ok  scr %d bright %3d  prims %d drops %u\n", name, scr, s_bright, g_n, g_drops); }
 }
 static void crown(int d) { ui_crown(d, t_ms); frame(); }
 static void press(void) { ui_button_edge(true, t_ms); t_ms += 60; ui_button_edge(false, t_ms); ui_button(false, t_ms); frame(); }
@@ -142,6 +143,12 @@ int main(void)
     ui_lowbat(true, t_ms); run(800); shot("lowbat");
     ui_lowbat(false, t_ms); run(900);
     ui_dfu(); write_ppm("dfu", fb, true);
+    for (int sc = 0; sc < 5; sc++)
+    {
+        crown(sc - scene > 0 ? 1 : -1); run(500); while (scene != sc) { crown(sc > scene ? 1 : -1); run(500); }
+        run(13000); char n[32]; snprintf(n, sizeof n, "dim_%d", sc); write_ppm(n, fb, true);
+        crown(1); run(400); if (scene == 4) { crown(-1); run(400); }
+    }
     printf("frames %u (%u sent), avg ui_frame %.1f us on this laptop, saves %d, haptics %d, %d/%d screenshots consistent\n",
            frames, sent_frames, render_ns / frames / 1000.0, saves, haptics, shots - bad_shots, shots);
     return bad_shots ? 1 : 0;
