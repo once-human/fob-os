@@ -543,7 +543,7 @@ static bool plat_info(int i, char *k, char *v)
     uint32_t up = os_sys_time_get() / 1000;
     switch (i)
     {
-    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.3"); break;
+    case 0: u_s(k, "Firmware"); u_s(v, "fob 0.4"); break;
     case 1: u_s(k, "Running for"); p = u_num(p, up / 3600); p = u_s(p, "h "); p = u_num(p, (up / 60) % 60); u_s(p, "m"); break;
     case 2: u_s(k, "Bluetooth"); u_s(v, plat_bt() ? "Connected" : "Visible, not connected"); break;
     case 3: u_s(k, "Clock"); u_s(v, time_set ? "Synced from laptop" : time_restored ? "Restored (may be behind)" : "Not set"); break;

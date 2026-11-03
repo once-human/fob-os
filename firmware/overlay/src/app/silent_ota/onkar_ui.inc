@@ -95,8 +95,9 @@ static uint8_t scr = S_BOOT, mode_cur;
 static bool full_dirty = true;
 static uint32_t boot_t0, boot_wait0, last_input, last_sec = 0xFFFFFFFF, last_min = 0xFFFFFFFF, save_at;
 static bool boot_run, boot_buzzed, sleeping, sleep_pending, dimmed, lowbat;
-static anim_t bright_an, face_an, dial_an, sc_an, fade_an;
-static int8_t scene, scene_from, scene_dir;
+static anim_t bright_an, face_an, dial_an, car_an, fade_an;      /* car_an: how far the visible carry scene is dragged off centre, in pixels */
+static int8_t scene;
+static bool car_drag;
 static int dial_idx;
 static uint8_t mem[N_MODES];                    /* per-mode memory: the page or row each mode was left on */
 static uint8_t fade_ph, pend_scr, pend_mode;    /* 0 none, 1 fading out, 2 fading in */
@@ -133,22 +134,26 @@ static void hair(int x0, int x1, int y, uint16_t c) { g_rect((float)x0, (float)y
 static void layer(int fi, const int16_t (*off)[2], int idx, int x, int y, uint16_t c, uint8_t a) { g_icon(x + off[idx][0], y + off[idx][1], fi, idx, c, a); }
 static void bigword(int w, int cy, uint8_t a) { const gl_t *g = &f_v_g[w]; g_icon(CX - g->w / 2, cy - g->h / 2, FV, w, C_INK, a); }
 
-/* the top row: the time, and what is connected. No empty boxes. */
-static void top(const char *where)
+/* the book's chrome: a top row of three hairline cells (the time, where you are, what is connected) and a caption row of two */
+static void top(const char *mid)
 {
     char t[8]; uint32_t h, m, s; time_parts(&h, &m, &s);
     char *p = u_2(t, h); *p++ = ':'; u_2(p, m);
-    word(30, 50, FB, t, C_INK, 255);
-    if (where && *where) { word_c(CX, 50, FL, where, C_Q, 255); }
-    char b[16]; int mv; int pc = plat_batt(&mv); p = u_s(b, plat_bt() ? "bt" : "");
-    if (pc >= 0) { if (plat_bt()) { p = u_s(p, " " DOT " "); } p = u_num(p, (uint32_t)pc); u_s(p, "%"); }
-    word_r(338, 50, FL, b, C_Q, 255);
+    hair(20, 120, 30, C_RULE); hair(130, 230, 30, C_RULE); hair(240, 348, 30, C_RULE);
+    word(20, 47, FL, t, C_INK, 255); word(130, 47, FL, mid, C_Q, 255);
+    char b[20]; int mv; int pc = plat_batt(&mv); p = u_s(b, plat_bt() ? "bt" : "visible");
+    if (pc >= 0) { p = u_s(p, " " DOT " "); p = u_num(p, (uint32_t)pc); u_s(p, "%"); }
+    word(240, 47, FL, b, C_Q, 255);
 }
-static void foot(const char *s) { hair(30, 338, 410, C_LN); word_c(CX, 432, FL, s, C_DIM, 255); }
+static void foot(const char *a, const char *b)
+{
+    hair(20, 180, 414, C_RULE); hair(190, 348, 414, C_RULE);
+    word(20, 431, FL, a, C_Q, 255); word(190, 431, FL, b, C_Q, 255);
+}
 static void segs(int n, int on, int y)
 {
-    float gap = 4.f, w = (308.f - gap * (n - 1)) / n;
-    for (int k = 0; k < n; k++) { g_rect(30.f + k * (w + gap), (float)y, w, 2.f, k == on ? C_INK : RGB(58, 58, 58), 255); }
+    float gap = 4.f, w = (328.f - gap * (n - 1)) / n;
+    for (int k = 0; k < n; k++) { g_rect(20.f + k * (w + gap), (float)y, w, 2.f, k == on ? C_INK : RGB(58, 58, 58), 255); }
 }
 
 /* ------------------------------------------------------------------ boot: rings draw, the star lands, the beluga swims in */
@@ -235,11 +240,11 @@ static void draw_qr(int idx, int x, int y, int s)
 static void sc_me(void)
 {
     bigword(W_ONKAR, 142, 255);
-    word(30, 232, FB, "i build tiny hardware", C_INK, 255);
-    word(30, 256, FB, "and the software for it.", C_Q, 255);
-    hair(30, 338, 292, C_LN);
-    word(30, 326, FL, "onkaryaglewad.in", C_Q, 255);
-    word(30, 346, FL, "scan, or tap a phone to the back", C_DIM, 255);
+    word(20, 232, FB, "i build tiny hardware", C_INK, 255);
+    word(20, 256, FB, "and the software for it.", C_Q, 255);
+    hair(20, 348, 292, C_LN);
+    word(20, 326, FL, "onkaryaglewad.in", C_Q, 255);
+    word(20, 346, FL, "scan, or tap a phone to the back", C_DIM, 255);
     g_rrect(236, 300, 102, 102, 0, 0xFFFF, 255); draw_qr(0, 240, 304, 3);
 }
 static void sc_stack(void)
@@ -249,7 +254,7 @@ static void sc_stack(void)
     u_2(b, m); word(24, 366, FN, b, C_Q, 255);
     uint32_t days = plat_now_s() / 86400u; int y, mo, d; civil(days, &y, &mo, &d);
     char *p = u_s(b, WDAY[days % 7]); *p++ = ' '; p = u_num(p, (uint32_t)d); *p++ = ' '; u_s(p, MON[mo - 1]);
-    word(30, 400, FB, b, C_Q, 255);
+    word(20, 400, FB, b, C_Q, 255);
 }
 static void sc_ring(void)
 {
@@ -279,7 +284,7 @@ static void sc_day(void)
         g_rect(x, 348.f - hh, 9.6f, hh, (uint32_t)i == h ? C_INK : (sun > 0.05f ? C_Q : RGB(58, 58, 58)), 255);
     }
     g_circle(30.f + h * 13.0f + 4.8f, 366.f, 2.8f, C_SIG, 255);
-    word(30, 394, FL, "midnight", C_Q, 255); word_c(CX, 394, FL, "noon", C_Q, 255); word_r(338, 394, FL, "midnight", C_Q, 255);
+    word(20, 394, FL, "midnight", C_Q, 255); word_c(CX, 394, FL, "noon", C_Q, 255); word_r(348, 394, FL, "midnight", C_Q, 255);
 }
 static void draw_scene(int i, uint32_t now)
 {
@@ -289,15 +294,15 @@ static const char *const SCENE_NAME[N_SCENES] = {"me", "pet", "stack", "hairline
 static void draw_carry(uint32_t now)
 {
     top(SCENE_NAME[scene]);
-    segs(N_SCENES, scene, 64);
-    if (an_busy(&sc_an, now))
+    segs(N_SCENES, scene, 60);
+    int bx = g_ox, by = g_oy, o = (int)an_val(&car_an, now);
+    g_ox = bx + o; draw_scene(scene, now);
+    if (o != 0)
     {
-        float e = an_val(&sc_an, now);
-        g_ox = (int)(-scene_dir * LCD_W * e);             draw_scene(scene_from, now);
-        g_ox = (int)(scene_dir * LCD_W * (1.f - e));      draw_scene(scene, now);
-        g_ox = 0;
+        int nb = scene + (o < 0 ? 1 : -1);
+        if (nb >= 0 && nb < N_SCENES) { g_ox = bx + o + (o < 0 ? LCD_W : -LCD_W); draw_scene(nb, now); }
     }
-    else { draw_scene(scene, now); }
+    g_ox = bx; g_oy = by;
 }
 
 /* ------------------------------------------------------------------ the dial (the book's: a giant word, neighbours fading, a tick scale) */
@@ -321,9 +326,9 @@ static void draw_dial(uint32_t now)
     }
     int k = (int)(p + 0.5f); if (k < 0) { k = 0; } if (k >= N_MODES) { k = N_MODES - 1; }
     float near = clampf(1.f - (p > k ? p - k : k - p) * 2.f, 0, 1);
-    hair(54, 338, 350, C_LN);
+    hair(54, 348, 350, C_LN);
     word(54, 376, FB, MODE_CAP[k], C_Q, (uint8_t)(255 * near));
-    foot("turn, or drag " DOT " press, or tap to enter");
+    foot("crown " DOT " rotate, or drag", "press " DOT " or tap to enter");
 }
 
 /* ------------------------------------------------------------------ modes */
@@ -341,29 +346,29 @@ static void draw_settings(uint32_t now)
 {
     (void)now; char b[24]; int row = mem[M_SETTINGS];
     top("settings");
-    int y = 70; if (row == 0) { g_circle(18, (float)y + 14, 3.5f, C_SIG, 255); }
-    word(30, y + 22, FT, "brightness", row == 0 ? C_INK : RGB(154, 148, 136), 255);
-    char *p = u_num(b, (uint32_t)uc->bright * 100u / 255u); u_s(p, "%"); word_r(338, y + 20, FB, b, C_SIG, 255);
+    int y = 70; if (row == 0) { g_circle(9, (float)y + 14, 3.5f, C_SIG, 255); }
+    word(20, y + 22, FT, "brightness", row == 0 ? C_INK : RGB(154, 148, 136), 255);
+    char *p = u_num(b, (uint32_t)uc->bright * 100u / 255u); u_s(p, "%"); word_r(348, y + 20, FB, b, C_SIG, 255);
     float k = (float)(uc->bright - 16) / 239.f; if (k < 0) { k = 0; }
     g_rect(SL_X0, y + 50, SL_X1 - SL_X0, 3, RGB(52, 52, 52), 255); g_rect(SL_X0, y + 50, k * (SL_X1 - SL_X0), 3, C_INK, 255);
     g_circle(SL_X0 + k * (SL_X1 - SL_X0), y + 51.5f, 13, C_INK, 255);
-    y = 160; if (row == 1) { g_circle(18, (float)y + 14, 3.5f, C_SIG, 255); }
-    word(30, y + 22, FT, "haptics", row == 1 ? C_INK : RGB(154, 148, 136), 255);
+    y = 160; if (row == 1) { g_circle(9, (float)y + 14, 3.5f, C_SIG, 255); }
+    word(20, y + 22, FT, "haptics", row == 1 ? C_INK : RGB(154, 148, 136), 255);
     for (int i = 0; i < 4; i++) { pill(30 + i * 78, y + 36, 72, HAP_NAME[i], (uc->haptic & 3) == i); }
-    y = 258; if (row == 2) { g_circle(18, (float)y + 14, 3.5f, C_SIG, 255); }
-    word(30, y + 22, FT, "screen", row == 2 ? C_INK : RGB(154, 148, 136), 255);
+    y = 258; if (row == 2) { g_circle(9, (float)y + 14, 3.5f, C_SIG, 255); }
+    word(20, y + 22, FT, "screen", row == 2 ? C_INK : RGB(154, 148, 136), 255);
     int sc = scr_choice();
     pill(30, y + 36, 112, "always on", sc == 0); pill(150, y + 36, 58, "30s", sc == 1); pill(214, y + 36, 58, "1m", sc == 2); pill(278, y + 36, 60, "5m", sc == 3);
-    hair(30, 338, 338, C_LN);
+    hair(20, 348, 338, C_LN);
     char k2[24], v[32], line[64];
-    for (int i = 0; plat_info(i, k2, v) && i < 4; i++) { p = u_s(line, k2); p = u_s(p, "  "); u_s(p, v); word(30, 362 + i * 16, FL, line, C_DIM, 255); }
-    foot("turn: move " DOT " press: change " DOT " or touch");
+    for (int i = 0; plat_info(i, k2, v) && i < 4; i++) { p = u_s(line, k2); p = u_s(p, "  "); u_s(p, v); word(20, 362 + i * 16, FL, line, C_DIM, 255); }
+    foot("crown " DOT " move", "press " DOT " change, or touch");
 }
 
 static void draw_cards(uint32_t now)
 {
     (void)now; int pg = mem[M_CARDS] & 1;
-    top("cards"); segs(2, pg, 64);
+    top("cards"); segs(2, pg, 60);
     g_rrect(36, 82, 296, 296, 14, 0xFFFF, 255);
     int s = pg ? 8 : 10, n = pg ? QR1_N : QR0_N; draw_qr(pg, 36 + (296 - n * s) / 2, 82 + (296 - n * s) / 2, s);
     word_c(CX, 408, FT, pg ? "github.com/once-human" : "onkaryaglewad.in", C_INK, 255);
@@ -376,7 +381,7 @@ static uint32_t rnd(void) { rnd_s ^= rnd_s << 13; rnd_s ^= rnd_s >> 17; rnd_s ^=
 static void draw_play(uint32_t now)
 {
     int pg = mem[M_PLAY] & 3; char b[8];
-    top("play"); segs(4, pg, 64);
+    top("play"); segs(4, pg, 60);
     bool rolling = play_t0 && now - play_t0 < 650;
     if (pg == 0)
     {
@@ -410,7 +415,7 @@ static void draw_tools(uint32_t now)
         word_r(328, 50, FL, TORCH_NAME[torch_lim], 0x0000, 255);
         return;
     }
-    top("tools"); segs(3, pg, 64);
+    top("tools"); segs(3, pg, 60);
     if (pg == 0)
     {
         g_ring(CX, 214, 100, 99, C_RULE, 255); g_circle(CX, 214, 26, C_INK, 255);
@@ -453,9 +458,9 @@ static void draw_mode_stub(void)
 {
     top(MODE_NAME[mode_cur]);
     bigword(MODE_WORD[mode_cur], 160, 255);
-    word(30, 250, FB, MODE_CAP[mode_cur], C_Q, 255);
-    word(30, 280, FB, "designed in the book, built next.", RGB(110, 110, 110), 255);
-    foot("double-press, or swipe right: back");
+    word(20, 250, FB, MODE_CAP[mode_cur], C_Q, 255);
+    word(20, 280, FB, "designed in the book, built next.", RGB(110, 110, 110), 255);
+    foot("dbl-press " DOT " dial", "swipe in from the left");
 }
 static void draw_low(void)
 {
@@ -463,7 +468,7 @@ static void draw_low(void)
     top("battery");
     g_circle(36, 92, 4, C_SIG, 255); word(46, 97, FL, "plug in soon", C_SIG, 255);
     char *p = u_num(b, (uint32_t)pc); u_s(p, "%"); word(24, 286, FN, b, C_SIG, 255);
-    word(30, 340, FL, "the screen dims. bluetooth stays on.", C_Q, 255);
+    word(20, 340, FL, "the screen dims. bluetooth stays on.", C_Q, 255);
 }
 
 /* ------------------------------------------------------------------ input */
@@ -471,8 +476,8 @@ static void scene_step(int d, uint32_t now)
 {
     int ns = scene + d;
     if (ns < 0 || ns >= N_SCENES) { hap(H_BUMP); return; }
-    scene_from = scene; scene = (int8_t)ns; scene_dir = (int8_t)(d > 0 ? 1 : -1);
-    an_set(&sc_an, 0); an_go(&sc_an, 1, 300, now, E_OUT);
+    scene = (int8_t)ns;
+    an_set(&car_an, (float)(d > 0 ? LCD_W : -LCD_W)); an_go(&car_an, 0, 340, now, E_OUT);
     uc->face = (uint8_t)scene; an_set(&face_an, scene); save_soon(now); hap(H_TICK); dirty();
 }
 static void page_step(int mode, int n, int d, uint32_t now)
@@ -514,7 +519,7 @@ static bool tdown, tmoved, tdrag; static int tx0, ty0, tx, ty, taxis; static uin
 static void ui_touch(bool down, int x, int y, uint32_t now)
 {
     if (lowbat || scr == S_BOOT || fade_ph) { return; }
-    if (sleeping) { if (down && !tdown) { wake(now); tdown = true; tmoved = true; tx0 = tx = x; ty0 = ty = y; taxis = 0; } if (!down) { tdown = false; } return; }
+    if (sleeping || dimmed) { tdown = false; car_drag = false; return; }          /* asleep or in the always-on glow: only the crown wakes it */
     if (down)
     {
         if (!tdown) { tdown = true; tmoved = false; tdrag = false; taxis = 0; tx0 = x; ty0 = y; tt0 = now; t_dial0 = an_val(&dial_an, now); touched(now); }
@@ -522,6 +527,11 @@ static void ui_touch(bool down, int x, int y, uint32_t now)
         int dx = x - tx0, dy = y - ty0;
         if (!taxis && (dx * dx + dy * dy) > 14 * 14) { taxis = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? 1 : 2; tmoved = true; }
         if (scr == S_DIAL && taxis == 2) { an_set(&dial_an, clampf(t_dial0 - dy / 120.f, 0, N_MODES - 1)); tdrag = true; dirty(); }
+        if (scr == S_CARRY && taxis == 1)
+        {
+            float off = (float)dx; if ((scene == 0 && off > 0) || (scene == N_SCENES - 1 && off < 0)) { off *= 0.3f; }      /* rubber band at the ends */
+            an_set(&car_an, off); car_drag = true; dirty();
+        }
         if (scr == S_MODE && mode_cur == M_SETTINGS && ty0 >= 100 && ty0 < 150 && taxis != 2)         /* the brightness slider */
         {
             int v = 16 + (int)(clampf((float)(x - SL_X0) / (SL_X1 - SL_X0), 0, 1) * 239.f);
@@ -537,7 +547,18 @@ static void ui_touch(bool down, int x, int y, uint32_t now)
     if (scr == S_MODE && mode_cur == M_SETTINGS && ty0 >= 100 && ty0 < 150 && tx0 >= 24) { return; }       /* a slider drag is not a swipe */
     if (scr == S_CARRY)
     {
-        if (swipe_h) { scene_step(dx < 0 ? 1 : -1, now); } else if (swipe_v && dy < 0) { open_dial(now); }
+        if (car_drag)
+        {
+            car_drag = false; float off = an_val(&car_an, now); int d = off < 0 ? 1 : -1; bool can = scene + d >= 0 && scene + d < N_SCENES;
+            if (can && (adx > 100 || (adx > 40 && dt < 260)) && (dx < 0) == (d > 0))
+            {
+                scene = (int8_t)(scene + d); uc->face = (uint8_t)scene; an_set(&face_an, scene); save_soon(now); hap(H_TICK);
+                an_set(&car_an, off + (d > 0 ? LCD_W : -LCD_W)); an_go(&car_an, 0, 300, now, E_OUT);
+            }
+            else { if (!can && adx > 60) { hap(H_BUMP); } an_go(&car_an, 0, 240, now, E_OUT); }
+            dirty(); return;
+        }
+        if (swipe_v && dy < 0) { open_dial(now); }
         return;
     }
     if (swipe_h && dx > 0 && tx0 < 60 && scr == S_MODE) { back_to_dial(now); return; }
@@ -568,6 +589,7 @@ static void ui_crown(int d, uint32_t now)
 {
     if (sleeping) { wake(now); return; }
     if (lowbat || scr == S_BOOT) { return; }
+    if (dimmed) { touched(now); return; }          /* from the always-on glow, the first turn just wakes it */
     touched(now);
     if (fade_ph) { return; }
     if (scr == S_CARRY) { scene_step(d, now); }
@@ -597,6 +619,7 @@ static void ui_button(bool long_press, uint32_t now)
     if (sleeping) { wake(now); return; }
     if (lowbat) { if (!long_press) { wake(now); dirty(); } return; }
     if (scr == S_BOOT) { return; }
+    if (dimmed && !long_press) { touched(now); return; }          /* a press from the glow only wakes it */
     touched(now);
     if (long_press)
     {
@@ -662,7 +685,7 @@ static bool ui_frame(uint32_t now)
     if (press_pend) { if (now - press_t >= DBL_MS) { press_pend = false; if (!fade_ph) { main_action(now, -1); } } else { busy = true; } }
     if (fade_ph == 1 && !an_busy(&fade_an, now))
     {
-        scr = pend_scr; if (scr == S_MODE) { mode_cur = pend_mode; } if (scr == S_CARRY) { an_set(&sc_an, 1); }
+        scr = pend_scr; if (scr == S_MODE) { mode_cur = pend_mode; } if (scr == S_CARRY) { an_set(&car_an, 0); car_drag = false; }
         an_go(&fade_an, 1, 240, now, E_OUT); fade_ph = 2; dirty();
     }
     if (fade_ph == 2 && !an_busy(&fade_an, now)) { fade_ph = 0; an_set(&fade_an, 1); dirty(); }
@@ -696,7 +719,7 @@ static bool ui_frame(uint32_t now)
     if (scr == S_MODE && mode_cur == M_PLAY && play_t0 && now - play_t0 < 700) { busy = true; dirty(); }
     if (scr == S_MODE && mode_cur == M_TOOLS && mem[M_TOOLS] % 3 == 1 && sw_run) { static uint32_t st; if (now - st >= 100) { st = now; dirty(); } }
     if (met_run && now >= met_next) { met_next += 60000u / met_bpm; hap(H_TICK); if (scr == S_MODE && mode_cur == M_TOOLS) { dirty(); } }
-    { static bool was_moving; bool moving = an_busy(&sc_an, now) || an_busy(&dial_an, now) || tdrag; if (moving) { busy = true; } if (moving || was_moving) { dirty(); } was_moving = moving; }
+    { static bool was_moving; bool moving = an_busy(&car_an, now) || an_busy(&dial_an, now) || tdrag || car_drag; if (moving) { busy = true; } if (moving || was_moving) { dirty(); } was_moving = moving; }
 
     if (!full_dirty) { return busy; }
     gfx_begin(C_BG);
@@ -731,9 +754,9 @@ static void ui_dfu(void)
     if (sleeping) { plat_display(true); sleeping = false; }
     plat_bright(uc ? uc->bright : 160);
     gfx_begin(C_BG);
-    word(30, 190, FT, "updating", C_INK, 255);
-    word(30, 232, FB, "keep it near the laptop.", C_Q, 255);
-    word(30, 258, FB, "fob restarts by itself.", RGB(110, 110, 110), 255);
+    word(20, 190, FT, "updating", C_INK, 255);
+    word(20, 232, FB, "keep it near the laptop.", C_Q, 255);
+    word(20, 258, FB, "fob restarts by itself.", RGB(110, 110, 110), 255);
     gfx_invalidate_all();
     gfx_flush();
 }

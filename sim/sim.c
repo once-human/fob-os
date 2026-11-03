@@ -139,7 +139,11 @@ int main(void)
     dbl(); run(700); dbl(); run(700); shot("carry_back");
     printf("  carry resumed on scene %d (expected 4)\n", scene);
     run(12000); shot("carry_dimmed");
-    crown(1); run(400); shot("carry_woken");
+    { int sc0 = scene; uint8_t b0 = s_bright; tap(184, 224); run(300); drag(300, 220, 80, 224, 160); run(400);
+      printf("  dimmed + touch: scene %d->%d, brightness %d->%d (expected unchanged)\n", sc0, scene, b0, s_bright);
+      crown(1); run(500); printf("  dimmed + first crown turn: scene %d->%d, brightness %d->%d (expected: same scene, brighter)\n", sc0, scene, b0, s_bright);
+      shot("carry_woken"); crown(1); run(500); printf("  second turn: scene now %d\n", scene); }
+    touch(true, 300, 220); for (int i = 1; i <= 8; i++) { t_ms += 16; touch(true, 300 - i * 14, 224); } write_ppm("carry_finger_follow", fb, true); t_ms += 16; touch(false, 190, 224); run(500);
     ui_lowbat(true, t_ms); run(800); shot("lowbat");
     ui_lowbat(false, t_ms); run(900);
     ui_dfu(); write_ppm("dfu", fb, true);
