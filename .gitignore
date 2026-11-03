@@ -1,0 +1,6 @@
+logs/
+sim/sim
+sim/out/
+*.pyc
+__pycache__/
+build/
