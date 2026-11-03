@@ -14,8 +14,8 @@ This repository starts from the hardware work that is already proven and replace
 | | |
 | --- | --- |
 | Carried over, proven on the device | panel power-up and init, quad-SPI + DMA streaming, vector renderer (≈25 ms full redraw), touch, crown (software decoder), haptic pattern engine, BLE + wireless updates, watchdog and boot back-off |
-| Carried over, to be replaced | the old watch UI (`onkar_ui.inc`) and its font. They stay only so the baseline still builds. |
-| To build here | the shell (dial, Carry, per-mode memory), the fob design language and motion, the modes, pairing and settings, packs |
+| Built here (fob 0.1) | the shell: boot, Carry with four scenes, the dial of nine modes, per-mode memory, double-press, settings, Archivo type, one signal colour |
+| Still to build | the modes themselves (cards, music, inbox, remote, claude, play, tools), pairing, packs, the pet, the beluga boot |
 
 See [`docs/roadmap.md`](docs/roadmap.md) for the order.
 
@@ -40,7 +40,7 @@ tools/                wireless flashing and control over Bluetooth (run.sh, ota_
 ## Flashing
 
 ```
-bash tools/run.sh ota_flash --go firmware/baseline/app_MP.bin
+bash tools/run.sh ota_flash --go $PWD/firmware/images/fob_0.1.bin      # recovery: firmware/baseline/app_MP.bin (the v19 watch UI)
 bash tools/run.sh os_ctl
 ```
 
